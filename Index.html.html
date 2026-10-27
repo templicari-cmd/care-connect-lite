@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CareConnectLite+ (Full CRUD & Conflict Validation)</title>
+  <style>
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      max-width: 480px;
+      margin: 40px auto;
+      padding: 0 20px;
+      color: #222;
+    }
+
+    h1 {
+      font-size: 1.4rem;
+      margin-bottom: 4px;
+    }
+
+    p.subtitle {
+      color: #555;
+      margin-top: 0;
+      margin-bottom: 24px;
+    }
+
+    .screen {
+      display: none;
+    }
+
+    .screen.active {
+      display: block;
+    }
+
+    .field {
+      margin-bottom: 16px;
+    }
+
+    label {
+      display: block;
+      font-weight: bold;
+      margin-bottom: 4px;
+    }
+
+    input,
+    select {
+      width: 100%;
+      padding: 8px;
+      box-sizing: border-box;
+      font-size: 1rem;
+    }
+
+    /* DB Read Annotation */
+    .data-label {
+      font-family: "Courier New", monospace;
+      font-size: 0.75rem;
+      color: #1a5fb4;
+      background: #eaf1fb;
+      border-left: 3px solid #1a5fb4;
+      padding: 4px 8px;
+      margin-bottom: 4px;
+    }
+
+    /* DB Write Annotation */
+    .data-write {
+      font-family: "Courier New", monospace;
+      font-size: 0.75rem;
+      color: #1e7a34;
+      background: #eaf7ee;
+      border-left: 3px solid #1e7a34;
+      padding: 4px 8px;
+      margin-bottom: 4px;
+    }
+
+    .card {
+      background: #f8f9fa;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+
+    .slot-picker {
+      display: flex;
+      gap: 8px;
+      margin-top: 6px;
+    }
+
+    .slot-picker label {
+      font-weight: normal;
+      background: #fff;
+      border: 1px solid #ccc;
+      padding: 6px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.9rem;
+    }
+
+    .slot-picker input[type="radio"] {
+      width: auto;
+      margin-right: 4px;
+    }
+
+    .notification-box {
+      background: #eaf7ee;
+      border: 1px solid #1e7a34;
+      padding: 10px;
+      border-radius: 4px;
+      font-size: 0.85rem;
+      margin-top: 12px;
+    }
+
+    button {
+      padding: 10px 16px;
+      font-size: 0.95rem;
+      cursor: pointer;
+      margin-right: 8px;
+      margin-bottom: 8px;
+    }
+
+    .btn-danger {
+      background-color: #d9534f;
+      color: white;
+      border: 1px solid #d43f3a;
+    }
+
+    .btn-secondary {
+      background-color: #6c757d;
+      color: white;
+      border: 1px solid #5a6268;
+    }
+
+    .error {
+      color: #b00020;
+      margin: 8px 0 12px;
+      font-size: 0.9rem;
+    }
+
+    .success {
+      color: #1e7a34;
+      margin: 8px 0 12px;
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- SCREEN 1: LOGIN -->
+  <section id="login" class="screen active">
+    <h1>CareConnectLite+ Login</h1>
+    <p class="subtitle">Patient Portal</p>
+
+    <div class="field">
+      <div class="data-label">READS: UserAccount.Username</div>
+      <label for="login-username">Username</label>
+      <input type="text" id="login-username">
+    </div>
+
+    <div class="field">
+      <div class="data-label">READS: UserAccount.PasswordHash</div>
+      <label for="login-password">Password</label>
+      <input type="password" id="login-password">
+    </div>
+
+    <div id="login-message" class="error" aria-live="polite"></div>
+    <button type="button" onclick="processLogin()">Log In</button>
+  </section>
+
+  <!-- SCREEN 2: PATIENT DASHBOARD (READ & DELETE ROUTING) -->
+  <section id="dashboard" class="screen">
+    <h1>My Appointments</h1>
+    <p class="subtitle">Manage your scheduled visits.</p>
+
+    <div id="no-appointments-msg" style="display: none;">
+      <p>You currently have no scheduled appointments.</p>
+      <button type="button" onclick="showScreen('appointments')">Book New Appointment</button>
+    </div>
+
+    <div id="active-appointment-card" class="card" style="display: none;">
+      <div class="data-label">READS: Appointment row (WHERE PatientID = loggedUser)</div>
+      <h3 style="margin-top:0;">Upcoming Visit</h3>
+      <p><strong>Provider:</strong> <span id="dash-provider"></span></p>
+      <p><strong>Date & Time:</strong> <span id="dash-datetime"></span></p>
+      <p><strong>Type:</strong> <span id="dash-type"></span></p>
+      <p><strong>Status:</strong> <span id="dash-status" style="color: #1e7a34; font-weight: bold;"></span></p>
+
+      <div class="data-write">
+        WRITES: UPDATE Appointment SET Status = "Cancelled" OR DELETE row
+      </div>
+      <button type="button" onclick="openEditScreen()">Update / Reschedule</button>
+      <button type="button" class="btn-danger" onclick="cancelAppointment()">Cancel Appointment</button>
+    </div>
+
+    <div class="notification-box">
+      <div class="data-write">WRITES: NotificationLog (Type, Recipient, DispatchStatus)</div>
+      <strong>System Notification Log:</strong><br>
+      <span id="dash-notification-text">No recent notifications.</span>
+    </div>
+
+    <div id="dashboard-message" class="success" aria-live="polite"></div>
+    <br>
+    <button type="button" class="btn-secondary" onclick="logout()">Log Out</button>
+  </section>
+
+  <!-- SCREEN 3: BOOK APPOINTMENT (CREATE / CONFLICT CHECK) -->
+  <section id="appointments" class="screen">
+    <h1>Book Appointment</h1>
+    <p class="subtitle">Select your preferred provider, date, and time.</p>
+
+    <div class="field">
+      <div class="data-label">READS: Provider.FirstName / Provider.LastName</div>
+      <label for="provider-name">Provider Name</label>
+      <input type="text" id="provider-name" value="Dr. Grimm">
+    </div>
+
+    <div class="field">
+      <div class="data-label">READS: Availability.DayOfWeek / Availability.StartTime</div>
+      <label for="appt-date">Date</label>
+      <input type="date" id="appt-date">
+    </div>
+
+    <div class="field">
+      <div class="data-label">READS: Availability.AvailableSlots (Conflict Check Engine)</div>
+      <label>Available Time Slot</label>
+      <div class="slot-picker">
+        <label><input type="radio" name="slot" value="09:00 AM" checked> 9:00 AM</label>
+        <label><input type="radio" name="slot" value="11:30 AM"> 11:30 AM</label>
+        <label><input type="radio" name="slot" value="02:00 PM"> 2:00 PM</label>
+      </div>
+    </div>
+
+    <div class="field">
+      <div class="data-label">READS: AppointmentType.TypeName</div>
+      <label for="appt-type">Type of Appointment</label>
+      <select id="appt-type">
+        <option value="In-Person">In-Person</option>
+        <option value="TeleHealth">TeleHealth</option>
+        <option value="Phone">Phone</option>
+      </select>
+    </div>
+
+    <div id="appointment-message" class="error" aria-live="polite"></div>
+    <button type="button" onclick="selectAppointment()">Review Booking</button>
+    <button type="button" class="btn-secondary" onclick="renderDashboard()">Cancel</button>
+  </section>
+
+  <!-- SCREEN 4: REVIEW & CONFIRM (CREATE COMMIT) -->
+  <section id="review" class="screen">
+    <h1>Review Appointment</h1>
+    <p class="subtitle">Please review your appointment details.</p>
+
+    <div class="field">
+      <div class="data-label">READS: Patient.PatientID</div>
+      <label for="review-patient">Patient</label>
+      <input type="text" id="review-patient" value="Joe Smith" readonly>
+    </div>
+
+    <div class="field">
+      <div class="data-label">READS: Provider.ProviderID</div>
+      <label for="review-provider">Provider</label>
+      <input type="text" id="review-provider" readonly>
+    </div>
+
+    <div class="field">
+      <div class="data-label">READS: Availability.AvailabilityID</div>
+      <label for="review-date">Date & Time</label>
+      <input type="text" id="review-date" readonly>
+    </div>
+
+    <div class="field">
+      <label for="review-type">Appointment Type</label>
+      <input type="text" id="review-type" readonly>
+    </div>
+
+    <div class="data-write">
+      WRITES: INSERT into Appointment (PatientID, ProviderID, AppointmentDateTime, Status = "Scheduled")
+    </div>
+
+    <div id="confirm-message" class="error" aria-live="polite"></div>
+    <button type="button" onclick="confirmAppointment()">Confirm & Save</button>
+    <button type="button" class="btn-secondary" onclick="showScreen('appointments')">Back</button>
+  </section>
+
+  <!-- SCREEN 5: UPDATE / RESCHEDULE (UPDATE COMMIT) -->
+  <section id="edit-appointment" class="screen">
+    <h1>Reschedule Appointment</h1>
+    <p class="subtitle">Modify existing booking details.</p>
+
+    <div class="field">
+      <div class="data-label">READS: Existing Appointment record</div>
+      <label for="edit-provider">Provider Name</label>
+      <input type="text" id="edit-provider">
+    </div>
+
+    <div class="field">
+      <label for="edit-date">New Date</label>
+      <input type="date" id="edit-date">
+    </div>
+
+    <div class="field">
+      <label>New Time Slot</label>
+      <div class="slot-picker">
+        <label><input type="radio" name="edit-slot" value="09:00 AM" checked> 9:00 AM</label>
+        <label><input type="radio" name="edit-slot" value="11:30 AM"> 11:30 AM</label>
+        <label><input type="radio" name="edit-slot" value="02:00 PM"> 2:00 PM</label>
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="edit-type">Appointment Type</label>
+      <select id="edit-type">
+        <option value="In-Person">In-Person</option>
+        <option value="TeleHealth">TeleHealth</option>
+        <option value="Phone">Phone</option>
+      </select>
+    </div>
+
+    <div class="data-write">
+      WRITES: UPDATE Appointment SET ProviderID, AppointmentDateTime, AppointmentTypeID WHERE AppointmentID
+    </div>
+
+    <div id="edit-message" class="error" aria-live="polite"></div>
+    <button type="button" onclick="saveAppointmentUpdate()">Save Changes</button>
+    <button type="button" class="btn-secondary" onclick="renderDashboard()">Discard Changes</button>
+  </section>
+
+  <script>
+    const demoUser = "jsmith";
+    const demoPassword = "1234";
+
+    function showScreen(id) {
+      document.querySelectorAll('.screen').forEach(function (screen) {
+        screen.classList.toggle('active', screen.id === id);
+      });
+    }
+
+    function loadSavedUser() {
+      const savedUser = localStorage.getItem("careConnectUser");
+      if (savedUser) {
+        document.getElementById("login-username").value = savedUser;
+        renderDashboard();
+      }
+    }
+
+    function processLogin() {
+      const username = document.getElementById("login-username").value.trim();
+      const password = document.getElementById("login-password").value;
+
+      document.getElementById("login-message").textContent = "";
+
+      if (username === "" || password === "") {
+        document.getElementById("login-message").textContent = "Please enter both a username and password.";
+        return;
+      }
+
+      if (username !== demoUser || password !== demoPassword) {
+        document.getElementById("login-message").textContent = "Invalid credentials. Use jsmith / 1234";
+        return;
+      }
+
+      localStorage.setItem("careConnectUser", username);
+      renderDashboard();
+    }
+
+    // READ & DASHBOARD ROUTING
+    function renderDashboard() {
+      showScreen("dashboard");
+      const apptData = localStorage.getItem("careConnectAppointment");
+
+      if (apptData) {
+        const appt = JSON.parse(apptData);
+        document.getElementById("dash-provider").textContent = appt.provider;
+        document.getElementById("dash-datetime").textContent = appt.date + " @ " + appt.time;
+        document.getElementById("dash-type").textContent = appt.type;
+        document.getElementById("dash-status").textContent = appt.status;
+
+        document.getElementById("active-appointment-card").style.display = "block";
+        document.getElementById("no-appointments-msg").style.display = "none";
+      } else {
+        document.getElementById("active-appointment-card").style.display = "none";
+        document.getElementById("no-appointments-msg").style.display = "block";
+      }
+
+      // Display Notification Status
+      const lastNotif = localStorage.getItem("careConnectLastNotif");
+      document.getElementById("dash-notification-text").textContent = lastNotif || "No recent notifications.";
+    }
+
+    // CONFLICT VALIDATION ENGINE
+    function checkSlotConflict(provider, date, time) {
+      const existingAppt = localStorage.getItem("careConnectAppointment");
+      if (!existingAppt) return false;
+
+      const appt = JSON.parse(existingAppt);
+      // Returns true if matching provider, date, and time slot already exist in active storage
+      return (appt.provider.toLowerCase() === provider.toLowerCase() && appt.date === date && appt.time === time);
+    }
+
+    // CREATE: Stage Selection
+    function selectAppointment() {
+      const provider = document.getElementById("provider-name").value.trim();
+      const date = document.getElementById("appt-date").value;
+      const time = document.querySelector('input[name="slot"]:checked')?.value;
+      const type = document.getElementById("appt-type").value;
+
+      document.getElementById("appointment-message").textContent = "";
+
+      if (!provider || !date) {
+        document.getElementById("appointment-message").textContent = "Please fill out both provider name and date.";
+        return;
+      }
+
+      // Execute Real Conflict Handling
+      if (checkSlotConflict(provider, date, time)) {
+        document.getElementById("appointment-message").textContent = 
+          `Scheduling Collision! ${provider} is already booked on ${date} at ${time}. Please choose another slot or date.`;
+        return;
+      }
+
+      document.getElementById("review-provider").value = provider;
+      document.getElementById("review-date").value = `${date} @ ${time}`;
+      document.getElementById("review-type").value = type;
+
+      // Staging object temporarily
+      window.tempBooking = { provider, date, time, type };
+      showScreen("review");
+    }
+
+    // CREATE: Commit to LocalStorage + Trigger Notification
+    function confirmAppointment() {
+      const appointment = {
+        patient: document.getElementById("review-patient").value,
+        provider: window.tempBooking.provider,
+        date: window.tempBooking.date,
+        time: window.tempBooking.time,
+        type: window.tempBooking.type,
+        status: "Scheduled"
+      };
+
+      localStorage.setItem("careConnectAppointment", JSON.stringify(appointment));
+      
+      // Dispatch Simulated Notification Log (FR-07)
+      const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const notifMsg = `[${timestamp}] Automated Confirmation SMS & Email dispatched to patient for ${appointment.date} @ ${appointment.time}.`;
+      localStorage.setItem("careConnectLastNotif", notifMsg);
+
+      document.getElementById("dashboard-message").textContent = "Appointment scheduled successfully!";
+      renderDashboard();
+    }
+
+    // UPDATE: Populate Edit Form
+    function openEditScreen() {
+      const apptData = localStorage.getItem("careConnectAppointment");
+      if (apptData) {
+        const appt = JSON.parse(apptData);
+        document.getElementById("edit-provider").value = appt.provider;
+        document.getElementById("edit-date").value = appt.date;
+        document.getElementById("edit-type").value = appt.type;
+        showScreen("edit-appointment");
+      }
+    }
+
+    // UPDATE: Save Changes + Re-validate
+    function saveAppointmentUpdate() {
+      const provider = document.getElementById("edit-provider").value.trim();
+      const date = document.getElementById("edit-date").value;
+      const time = document.querySelector('input[name="edit-slot"]:checked')?.value;
+      const type = document.getElementById("edit-type").value;
+
+      if (!provider || !date) {
+        document.getElementById("edit-message").textContent = "Provider and Date fields are required.";
+        return;
+      }
+
+      const apptData = JSON.parse(localStorage.getItem("careConnectAppointment"));
+      apptData.provider = provider;
+      apptData.date = date;
+      apptData.time = time;
+      apptData.type = type;
+      apptData.status = "Rescheduled";
+
+      localStorage.setItem("careConnectAppointment", JSON.stringify(apptData));
+
+      // Dispatch Notification
+      const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const notifMsg = `[${timestamp}] Reschedule Alert: Update email dispatched for ${date} @ ${time}.`;
+      localStorage.setItem("careConnectLastNotif", notifMsg);
+
+      document.getElementById("dashboard-message").textContent = "Appointment rescheduled successfully!";
+      renderDashboard();
+    }
+
+    // DELETE / CANCEL
+    function cancelAppointment() {
+      if (confirm("Are you sure you want to cancel this appointment?")) {
+        localStorage.removeItem("careConnectAppointment");
+
+        // Dispatch Cancellation Notification
+        const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const notifMsg = `[${timestamp}] Cancellation Confirmation disspatched via SMS & Email.`;
+        localStorage.setItem("careConnectLastNotif", notifMsg);
+
+        document.getElementById("dashboard-message").textContent = "Appointment cancelled successfully.";
+        renderDashboard();
+      }
+    }
+
+    function logout() {
+      localStorage.removeItem("careConnectUser");
+      showScreen("login");
+    }
+
+    window.addEventListener("DOMContentLoaded", loadSavedUser);
+  </script>
+</body>
+</html>
